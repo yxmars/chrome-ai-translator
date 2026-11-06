@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Chrome AI Translator",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "minimum_chrome_version": "116",
   "description": "划词、双语网页与专业术语 AI 翻译",
   "permissions": [

@@ -93,3 +93,16 @@ it("reads a whole page in one batch and preserves position/miss accounting", asy
   expect(info.misses).toBe(1);
   await cache.close();
 });
+
+it("expands existing cache limits without losing entries or hit statistics", async () => {
+  const old = new TranslationCache(10000, 64 * 1024 * 1024);
+  await old.put("retained", result);
+  await old.get("retained");
+  await old.close();
+  const expanded = new TranslationCache();
+  expect(await expanded.info()).toMatchObject({ entries: 1, hits: 1, maxEntries: 100000, maxBytes: 512 * 1024 * 1024 });
+  expect(await expanded.get("retained")).toEqual(result);
+  await expanded.put("new", result);
+  expect(await expanded.info()).toMatchObject({ entries: 2, hits: 2, maxEntries: 100000, maxBytes: 512 * 1024 * 1024 });
+  await expanded.close();
+});

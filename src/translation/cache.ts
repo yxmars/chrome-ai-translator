@@ -1,7 +1,7 @@
 import type { Settings, Translation, CacheInfo } from "../shared/types";
 import { normalizeText } from "../shared/text";
-export const CACHE_MAX_ENTRIES = 10000,
-  CACHE_MAX_BYTES = 64 * 1024 * 1024;
+export const CACHE_MAX_ENTRIES = 100000,
+  CACHE_MAX_BYTES = 512 * 1024 * 1024;
 export function cacheIdentity(s: Settings, text: string) {
   return JSON.stringify([
     s.provider,
@@ -83,6 +83,9 @@ export class TranslationCache {
       maxBytes: this.maxBytes,
     };
   }
+  private currentInfo(stored?: CacheInfo): CacheInfo {
+    return { ...(stored || this.blank()), maxEntries: this.maxEntries, maxBytes: this.maxBytes };
+  }
   private tick() {
     return (this.clock = Math.max(Date.now(), this.clock + 1));
   }
@@ -105,7 +108,7 @@ export class TranslationCache {
         let remaining = records.length + 1;
         const update = () => {
           if (--remaining) return;
-          const info = (stats.result as CacheInfo) || this.blank();
+          const info = this.currentInfo(stats.result as CacheInfo | undefined);
           for (const record of records) {
             const entry = record.result as Entry | undefined;
             values.push(entry?.value);
@@ -141,7 +144,7 @@ export class TranslationCache {
         let ready = 0;
         const update = () => {
           if (++ready !== 2) return;
-          const info = (stats.result as CacheInfo) || this.blank(),
+          const info = this.currentInfo(stats.result as CacheInfo | undefined),
             old = record.result as Entry | undefined;
           info.bytes += size - (old?.size || 0);
           if (!old) info.entries++;
@@ -179,7 +182,7 @@ export class TranslationCache {
       const value = (await request(tx.objectStore("meta").get("info"))) as
         CacheInfo | undefined;
       await done;
-      return value || this.blank();
+      return this.currentInfo(value);
     });
   }
   async clear() {

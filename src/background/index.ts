@@ -18,12 +18,14 @@ chrome.runtime.onMessage.addListener(
     (async () => {
       if (
         !sender.url?.startsWith(chrome.runtime.getURL("")) &&
-        message.type !== "TRANSLATE"
+        !["TRANSLATE", "GET_CACHED"].includes(message.type)
       )
         throw new Error("网页无权修改配置");
       switch (message.type) {
         case "TRANSLATE":
-          return service.translate(message.text,message.force===true);
+          return service.translate(message.text, message.force === true);
+        case "GET_CACHED":
+          return service.cached(message.texts);
         case "GET_STATE":
           return service.state();
         case "CLEAR":

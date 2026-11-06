@@ -70,10 +70,10 @@ test("selection retries a whole failed paragraph inline after automatic retries 
     await expect(page.getByRole("button", { name: "重试此段" })).toBeVisible();
     expect(failedCalls).toBe(3);
     await expect(page.locator("[data-cait-progress]")).toContainText("失败 1");
-    await page.locator("#failed em").dblclick({position:{x:8,y:8}});
+    await page.locator("#failed em").dblclick({ position: { x: 8, y: 8 } });
     await page
       .getByRole("button", { name: "重译失败段落", exact: true })
-      .click({timeout:5000});
+      .click({ timeout: 5000 });
     await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(
       page.locator('#failed + [data-cait="translation"]'),
@@ -92,8 +92,11 @@ test("selection retries a whole failed paragraph inline after automatic retries 
     );
     expect(await page.locator("#failed").innerHTML()).toBe(original);
     await page.locator("#normal").click({ clickCount: 3 });
-    await page.getByRole("button", { name: "翻译选中文本" }).click();
-    await expect(page.getByRole("dialog")).toContainText("整段译文恢复成功");
+    await page.getByRole("button", { name: "翻译选中段落" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(
+      page.locator("#normal + [data-cait=translation]"),
+    ).toContainText("整段译文恢复成功");
     await page.locator("body").click({ position: { x: 5, y: 5 } });
     await worker.evaluate(
       async (id) => chrome.tabs.sendMessage(id, { type: "TOGGLE_PAGE" }),

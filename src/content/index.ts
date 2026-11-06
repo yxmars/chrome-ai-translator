@@ -1,8 +1,11 @@
 import { send, type Translation } from "../shared/types";
-import { paragraphs } from "./dom";
+import { paragraphs, placeTranslation } from "./dom";
 import { protectCitations, renderTranslation } from "./citations";
 import { PageProgress } from "./progress";
-import { paragraphTargetsInRange } from "./failed-selection";
+import {
+  paragraphTargetsInRange,
+  bilingualTargetsInRange,
+} from "./failed-selection";
 // Isolated world: no window messaging bridge and no page-visible API keys.
 const context = globalThis as typeof globalThis & {
   __caitInitialized?: boolean;
@@ -60,13 +63,17 @@ if (!context.__caitInitialized) {
     text = selection.toString().trim();
     if (!text) return;
     const range = selection.getRangeAt(0);
-    selectedParagraphs = paragraphTargetsInRange(range,paragraphs(document,1),enabled?failed:[]);
-    if(!selectedParagraphs.length&&text.length>12000)return;
+    selectedParagraphs = enabled
+      ? bilingualTargetsInRange(range, paragraphs(document, 1))
+      : [];
+    if (!selectedParagraphs.length && text.length > 12000) return;
     selectedGeneration = generation;
-    button.textContent = selectedParagraphs.length ? "翻译选中段落" : "翻译";
+    const retryingFailed = selectedParagraphs.some((el) => failed.has(el));
+    const paragraphLabel = retryingFailed ? "重译失败段落" : "翻译选中段落";
+    button.textContent = selectedParagraphs.length ? paragraphLabel : "翻译";
     button.setAttribute(
       "aria-label",
-      selectedParagraphs.length ? "翻译选中段落" : "翻译选中文本",
+      selectedParagraphs.length ? paragraphLabel : "翻译选中文本",
     );
     button.title = selectedParagraphs.length
       ? "重新翻译完整段落，显示在原文下方"
@@ -82,15 +89,23 @@ if (!context.__caitInitialized) {
       const targets = [...selectedParagraphs],
         current = selectedGeneration;
       hide();
-      if(current!==generation)return;
-      if(!enabled){enabled=true;progress.start(targets);}else progress.include(targets);
-      await Promise.all(targets.map(async el=>{
-        if(!el.isConnected)return;
-        let node=inserted.get(el);
-        if(!node){node=createTranslationNode();inserted.set(el,node);}
-        if(!node.isConnected)el.after(node);
-        await translateNode(el,node,current,true);
-      }));
+      if (current !== generation) return;
+      if (!enabled) {
+        enabled = true;
+        progress.start(targets);
+      } else progress.include(targets);
+      await Promise.all(
+        targets.map(async (el) => {
+          if (!el.isConnected) return;
+          let node = inserted.get(el);
+          if (!node) {
+            node = createTranslationNode();
+            inserted.set(el, node);
+          }
+          if (!node.isConnected) placeTranslation(el, node);
+          await translateNode(el, node, current);
+        }),
+      );
       return;
     }
     const version = ++selectionVersion;
@@ -136,14 +151,19 @@ if (!context.__caitInitialized) {
     generation = 0;
   const inserted = new Map<HTMLElement, HTMLElement>();
   const failed = new Set<HTMLElement>();
-  function createTranslationNode(){
-    const node=document.createElement('div');node.dataset.cait='translation';node.textContent='翻译中…';node.style.cssText='display:block;padding:8px 0;color:#2563eb;font-size:0.95em;line-height:1.65;white-space:pre-wrap';return node;
+  function createTranslationNode() {
+    const node = document.createElement("div");
+    node.dataset.cait = "translation";
+    node.textContent = "翻译中…";
+    node.style.cssText =
+      "display:block;clear:both;width:100%;box-sizing:border-box;padding:8px 0;color:#2563eb;font-size:0.95em;line-height:1.65;white-space:pre-wrap";
+    return node;
   }
   async function translateNode(
     el: HTMLElement,
     node: HTMLElement,
     current: number,
-    force=false,
+    force = false,
   ) {
     if (current !== generation) return;
     if (!node.isConnected) {
@@ -162,7 +182,7 @@ if (!context.__caitInitialized) {
       });
       if (current === generation && node.isConnected) {
         renderTranslation(node, r.text, protectedText);
-        progress.set(el, "success");
+        progress.set(el, "success", r.cacheHit === true);
       } else if (current === generation) progress.set(el, "skipped");
     } catch (e) {
       if (current !== generation) return;
@@ -206,21 +226,68 @@ if (!context.__caitInitialized) {
       };
     }
     void (async () => {
-      for (let i = 0; i < candidates.length; i += 3) {
+      progress.lookup(true);
+      const remaining: HTMLElement[] = [];
+      // Cached paragraphs render first and never wait behind a model request.
+      for (let i = 0; i < candidates.length; i += 32) {
         if (current !== generation) return;
-        await Promise.all(
-          candidates.slice(i, i + 3).map(async (el) => {
-            if (inserted.has(el) || !el.isConnected) {
-              progress.set(el, "skipped");
-              return;
-            }
-            const node = createTranslationNode();
-            el.after(node);
+        const batch = candidates.slice(i, i + 32);
+        const prepared = batch.map((el) => protectCitations(el));
+        let cached: (Translation | null)[] = [];
+        try {
+          cached = await send<(Translation | null)[]>({
+            type: "GET_CACHED",
+            texts: prepared.map((p) => p.text),
+          });
+        } catch {
+          /* A cache read failure falls back to normal translation. */
+        }
+        if (current !== generation) return;
+        for (let j = 0; j < batch.length; j++) {
+          const el = batch[j];
+          if (!el.isConnected) {
+            progress.set(el, "skipped");
+            continue;
+          }
+          const result = cached[j];
+          if (!result) {
+            remaining.push(el);
+            continue;
+          }
+          const node = inserted.get(el) || createTranslationNode();
+          try {
+            renderTranslation(node, result.text, prepared[j]);
+            placeTranslation(el, node);
             inserted.set(el, node);
-            await translateNode(el, node, current);
-          }),
-        );
+            progress.set(el, "success", true);
+          } catch {
+            remaining.push(el);
+          }
+        }
       }
+      if (current !== generation) return;
+      progress.lookup(false);
+      let next = 0;
+      // Background still limits actual model requests to 3; independent jobs avoid batch barriers.
+      await Promise.all(
+        Array.from({ length: Math.min(3, remaining.length) }, async () => {
+          while (next < remaining.length) {
+            if (current !== generation) return;
+            const el = remaining[next++];
+            if (!el.isConnected) {
+              progress.set(el, "skipped");
+              continue;
+            }
+            let node = inserted.get(el);
+            if (!node) {
+              node = createTranslationNode();
+              inserted.set(el, node);
+              placeTranslation(el, node);
+            }
+            await translateNode(el, node, current);
+          }
+        }),
+      );
     })();
     return { enabled, total: candidates.length };
   }

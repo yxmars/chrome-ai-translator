@@ -63,3 +63,5 @@ it("finishes skipped paragraphs and explains empty pages", () => {
     "未找到可翻译正文",
   );
 });
+
+it('reports actual cache-rendered paragraphs and resets them on restore',()=>{const {root,progress,a,b}=fixture();progress.start([a,b]);progress.lookup(true);expect(root.querySelector('[role=status]')?.textContent).toContain('读取缓存');progress.set(a,'success',true);progress.lookup(false);expect(root.querySelector('[role=status]')?.textContent).toContain('缓存 1');progress.set(b,'success');expect(root.querySelector('[role=status]')?.textContent).toContain('翻译完成 2/2');progress.clear();progress.start([a]);expect(root.querySelector('[role=status]')?.textContent).toContain('缓存 0');});

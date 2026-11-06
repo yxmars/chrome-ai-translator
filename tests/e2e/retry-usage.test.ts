@@ -111,9 +111,9 @@ test("retry failed paragraphs and persist daily tokens/cost without charging loc
     expect(seen.get("Transient retry example.")).toBe(2);
     await expect(panel.getByLabel("用量与费用")).toContainText("CNY 0.000376");
     await panel.getByLabel("待翻译文本").fill("Manual side panel retry.");
-    await panel.getByRole("button", {name:"翻译文本",exact:true}).click();
+    await panel.getByRole("button", { name: "翻译文本", exact: true }).click();
     await expect(panel.getByRole("status")).toContainText("401");
-    await panel.getByRole("button", {name:"重试翻译",exact:true}).click();
+    await panel.getByRole("button", { name: "重试翻译", exact: true }).click();
     await expect(panel.getByRole("status")).toContainText("识别源语言");
     await expect(panel.getByTestId("usage-total")).toContainText("360");
     await expect(panel.getByLabel("用量与费用")).toContainText("CNY 0.000564");

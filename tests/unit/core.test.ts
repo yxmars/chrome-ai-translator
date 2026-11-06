@@ -145,9 +145,20 @@ describe("service", () => {
 });
 it("excludes editable areas, code, nested paragraphs and existing translations", () => {
   document.body.innerHTML =
-    '<main><p id="yes">This is an ordinary article paragraph.</p><pre><p>This code paragraph should not translate.</p></pre><div contenteditable=""><p>Editable text should never be translated.</p></div><p>This contains <code>inline code</code> and is excluded.</p><div data-cait="translation"><p>Translated contents should be excluded.</p></div></main>';
+    '<main><p id="yes">This is an ordinary article paragraph.</p><pre><p>This code paragraph should not translate.</p></pre><div contenteditable=""><p>Editable text should never be translated.</p></div><p id="inline">This contains <code>inline code</code> and is excluded.</p><div data-cait="translation"><p>Translated contents should be excluded.</p></div></main>';
   vi.spyOn(HTMLElement.prototype, "getClientRects").mockReturnValue([
     {},
   ] as unknown as DOMRectList);
-  expect(paragraphs().map((e) => e.id)).toEqual(["yes"]);
+  expect(paragraphs().map((e) => e.id)).toEqual(["yes", "inline"]);
+});
+
+it("bulk cache lookup returns cache diagnostics without calling the model for misses", async () => {
+  const service = new TranslationService();
+  await service.translate("known");
+  const before = vi.mocked(fetch).mock.calls.length;
+  expect(await service.cached(["known", "unknown"])).toEqual([
+    { text: "你好", detectedLanguage: "en", cacheHit: true },
+    null,
+  ]);
+  expect(fetch).toHaveBeenCalledTimes(before);
 });

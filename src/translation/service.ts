@@ -12,6 +12,7 @@ import {
 } from "./providers";
 import { UsageStore } from "./usage";
 import { ProviderError, retryDelay, sleep } from "./retry";
+import { TranslationCache, cacheIdentity, cacheKey } from "./cache";
 export class Semaphore {
   private active = 0;
   private waiting: (() => void)[] = [];
@@ -31,18 +32,32 @@ export class Semaphore {
 }
 const queue = new Semaphore(3);
 export class TranslationService {
-  private cache: Record<string, Translation> = {};
+  private cache = new TranslationCache();
   private pending = new Map<string, Promise<Translation>>();
   private history: HistoryItem[] = [];
   private epoch = 0;
   private usage = new UsageStore();
   private ready = this.restore();
+  private publishTimer?: ReturnType<typeof setTimeout>;
+  private publishCache() {
+    if (this.publishTimer) return;
+    this.publishTimer = setTimeout(() => {
+      this.publishTimer = undefined;
+      void this.cache
+        .info()
+        .then((cacheInfo) => chrome.storage.local.set({ cacheInfo }))
+        .catch(() => {});
+    }, 250);
+  }
   private async restore() {
     const d = await chrome.storage.local.get<{
       cache?: Record<string, Translation>;
       history?: HistoryItem[];
     }>(["cache", "history"]);
-    this.cache = d.cache || {};
+    if (d.cache) {
+      await this.cache.migrate(d.cache);
+      await chrome.storage.local.remove(["cache"]);
+    }
     this.history = d.history || [];
   }
   async settings(): Promise<Settings> {
@@ -58,32 +73,51 @@ export class TranslationService {
       settings: await this.settings(),
       history: this.history,
       usage: await this.usage.list(),
+      cacheInfo: await this.cache.info(),
     };
   }
   async clear() {
     await this.ready;
     this.epoch++;
-    this.cache = {};
+    await this.cache.clear();
+    this.publishCache();
     this.history = [];
     await chrome.storage.local.remove(["cache", "history"]);
   }
-  async translate(text: string, force=false): Promise<Translation> {
+  async cached(texts: string[]): Promise<(Translation | null)[]> {
+    await this.ready;
+    if (
+      !Array.isArray(texts) ||
+      texts.length > 64 ||
+      texts.some(
+        (text) =>
+          typeof text !== "string" || !text.trim() || text.length > 12000,
+      ) ||
+      texts.reduce((n, t) => n + t.length, 0) > 512000
+    )
+      throw new Error("缓存查询内容超出限制");
+    const settings = await this.settings();
+    const keys = await Promise.all(
+      texts.map((text) => cacheKey(cacheIdentity(settings, text))),
+    );
+    const values = await this.cache.getMany(keys);
+    this.publishCache();
+    return values.map((value) => (value ? { ...value, cacheHit: true } : null));
+  }
+  async translate(text: string, force = false): Promise<Translation> {
     await this.ready;
     if (typeof text !== "string" || !text.trim() || text.length > 12000)
       throw new Error("请输入 1–12000 字符");
     const s = await this.settings();
-    const key = JSON.stringify([
-      s.provider,
-      s.endpoint,
-      s.model,
-      s.source,
-      s.target,
-      s.domain,
-      s.explainTerms,
-      s.mode,
-      text,
-    ]);
-    if (!force && this.cache[key]) return this.cache[key];
+    const key = await cacheKey(cacheIdentity(s, text));
+    if (this.pending.has(key)) return this.pending.get(key)!;
+    if (!force) {
+      const cached = await this.cache.get(key);
+      if (cached) {
+        this.publishCache();
+        return { ...cached, cacheHit: true };
+      }
+    }
     if (this.pending.has(key)) return this.pending.get(key)!;
     const epoch = this.epoch;
     const task = queue.run(async () => {
@@ -125,9 +159,8 @@ export class TranslationService {
       }
       if (!result) throw new Error("翻译失败，请重试");
       if (epoch === this.epoch) {
-        this.cache[key] = result;
-        const keys = Object.keys(this.cache);
-        while (keys.length > 100) delete this.cache[keys.shift()!];
+        await this.cache.put(key, result);
+        this.publishCache();
         this.history = [
           {
             ...result,
@@ -141,7 +174,6 @@ export class TranslationService {
           ...this.history,
         ].slice(0, 30);
         await chrome.storage.local.set({
-          cache: this.cache,
           history: this.history,
         });
       }

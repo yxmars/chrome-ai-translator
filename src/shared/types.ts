@@ -29,13 +29,15 @@ export const defaults: Settings = {
 export interface Translation {
   text: string;
   detectedLanguage: string;
+  cacheHit?: boolean;
 }
 export interface HistoryItem extends Translation {
   original: string;
   time: number;
 }
 export type Request =
-  | { type: "TRANSLATE"; text: string; force?:boolean }
+  | { type: "TRANSLATE"; text: string; force?: boolean }
+  | { type: "GET_CACHED"; texts: string[] }
   | { type: "GET_STATE" }
   | { type: "SAVE_SETTINGS"; settings: Settings }
   | { type: "CLEAR" };
@@ -73,4 +75,13 @@ export interface UsageRow extends TokenUsage {
 }
 export interface ProviderResult extends Translation {
   usage?: TokenUsage;
+}
+
+export interface CacheInfo {
+  entries: number;
+  bytes: number;
+  hits: number;
+  misses: number;
+  maxEntries: number;
+  maxBytes: number;
 }

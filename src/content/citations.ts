@@ -1,5 +1,6 @@
+import { normalizeText } from "../shared/text";
 const citationSelector =
-  'cite,q,[role="doc-biblioref"],.ltx_cite,.citation,[data-citation],a[href*="#bib"],a[href*="#ref"]';
+  'code,kbd,samp,cite,q,[role="doc-biblioref"],.ltx_cite,.citation,[data-citation],a[href*="#bib"],a[href*="#ref"]';
 export interface ProtectedText {
   text: string;
   citations: Map<string, Node>;
@@ -8,7 +9,7 @@ export interface ProtectedText {
 export function protectCitations(el: HTMLElement): ProtectedText {
   const citations = new Map<string, Node>();
   let hash = 2166136261;
-  for (const ch of el.textContent || "")
+  for (const ch of normalizeText(el.textContent || ""))
     hash = Math.imul(hash ^ ch.charCodeAt(0), 16777619);
   let nonce = (hash >>> 0).toString(16);
   while ((el.textContent || "").includes(`[CAIT_CITE_${nonce}_`)) nonce += "x";
@@ -47,7 +48,14 @@ function safeCitation(node: Node): Node {
       /* Render unsafe links as text. */
     }
   }
-  const span = document.createElement("span");
+  const tag =
+    node instanceof HTMLElement &&
+    ["CODE", "KBD", "SAMP", "Q"].includes(node.tagName)
+      ? node.tagName.toLowerCase()
+      : "span";
+  const span = document.createElement(tag);
+  if (node instanceof HTMLElement && tag !== "span")
+    span.className = node.className;
   for (const child of node.childNodes) span.append(safeCitation(child));
   return span;
 }

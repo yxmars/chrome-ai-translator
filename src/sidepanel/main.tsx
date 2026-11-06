@@ -8,6 +8,7 @@ import {
   type Translation,
   type UsageRow,
   type Price,
+  type CacheInfo,
 } from "../shared/types";
 import { endpointOrigin } from "../translation/providers";
 import { pricingKey } from "../translation/usage";
@@ -23,7 +24,8 @@ function App() {
     [pageEnabled, setPageEnabled] = useState(false),
     [pageBusy, setPageBusy] = useState(false),
     [usage, setUsage] = useState<UsageRow[]>([]),
-    [manualFailed, setManualFailed] = useState(false);
+    [manualFailed, setManualFailed] = useState(false),
+    [cacheInfo, setCacheInfo] = useState<CacheInfo>();
   const update = (key: keyof Settings, value: string | boolean | number) =>
     setS((v) => ({ ...v, [key]: value }));
   async function refresh() {
@@ -31,12 +33,14 @@ function App() {
       settings: Settings;
       history: HistoryItem[];
       usage: UsageRow[];
+      cacheInfo: CacheInfo;
     }>({
       type: "GET_STATE",
     });
     setS(d.settings);
     setHistory(d.history);
     setUsage(d.usage || []);
+    setCacheInfo(d.cacheInfo);
   }
   useEffect(() => {
     void refresh().catch((e) => setNotice(e.message));
@@ -44,6 +48,8 @@ function App() {
       changes: Record<string, chrome.storage.StorageChange>,
       area: string,
     ) => {
+      if (area === "local" && changes.cacheInfo)
+        setCacheInfo(changes.cacheInfo.newValue as CacheInfo);
       if (area === "local" && changes.usageStats)
         setUsage(
           Object.values(changes.usageStats.newValue || {}) as UsageRow[],
@@ -362,6 +368,30 @@ function App() {
         <PriceEditor settings={s} onChange={setS} />
         <button onClick={() => void action(save)}>保存配置</button>
       </section>
+      {cacheInfo && (
+        <section aria-label="翻译缓存">
+          <h2>翻译缓存</h2>
+          <p className="text-sm">
+            {cacheInfo.entries.toLocaleString()} /{" "}
+            {cacheInfo.maxEntries.toLocaleString()} 条 ·{" "}
+            {(cacheInfo.bytes / 1048576).toFixed(2)} /{" "}
+            {cacheInfo.maxBytes / 1048576} MiB
+          </p>
+          <p className="text-sm">
+            命中率：
+            {cacheInfo.hits + cacheInfo.misses
+              ? Math.round(
+                  (100 * cacheInfo.hits) / (cacheInfo.hits + cacheInfo.misses),
+                )
+              : 0}
+            % · 命中 {cacheInfo.hits} 次
+          </p>
+          <p className="text-xs text-slate-500">
+            长期保留、容量满时优先淘汰最久未使用条目。缓存命中不调用模型，不增加
+            Token；不同语言、模型、领域及接口分别缓存。
+          </p>
+        </section>
+      )}
       <UsagePanel rows={usage} />
       <section>
         <div className="flex items-center justify-between">
@@ -391,7 +421,8 @@ function App() {
           ))
         )}
         <p className="text-xs text-slate-400">
-          最多保存 30 条本地记录与 100 条缓存。所选文本将发送至配置的服务。
+          最多保存 30 条本地记录；缓存上限 10,000 条 / 64
+          MiB。所选文本将发送至配置的服务。
         </p>
       </section>
     </main>

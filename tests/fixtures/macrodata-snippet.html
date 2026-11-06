@@ -1,0 +1,59 @@
+<!-- Regression excerpt: https://macrodata.co/blog/annotating-robot-video-subtasks -->
+<!doctype html><meta charset="utf-8" /><style>
+  .heading {
+    display: flex;
+    align-items: baseline;
+  }
+  code {
+    font-family: monospace;
+  }
+</style>
+<main>
+  <div class="heading">
+    <h3>Fixed-length baseline</h3>
+    <button>Link</button>
+  </div>
+  <p class="mt-5 first:mt-0">
+    As a sanity-check baseline, we ignore the video content and task instruction
+    entirely. We simply split each episode into consecutive segments that are
+    exactly
+    <code
+      class="bg-marketing-artifact-surface text-foreground border-marketing-rule rounded-none border px-1.5 py-0.5 font-mono text-[0.9em]"
+      >5.77s</code
+    >
+    long, the mean gold segment duration in WGO‑Bench, and score the resulting
+    boundaries against the human subtask boundaries. This reaches
+    <code
+      class="bg-marketing-artifact-surface text-foreground border-marketing-rule rounded-none border px-1.5 py-0.5 font-mono text-[0.9em]"
+      >0.070</code
+    >
+    Segment F1 on the full 100-episode benchmark.
+  </p>
+  <div class="heading">
+    <h3>Splitting Videos by Similarity</h3>
+    <button>Link</button>
+  </div>
+  <p class="mt-5 first:mt-0">
+    Our first non-trivial approach follows prior work on VLM captioning for
+    subtask segmentation (⁠<span
+      class="relative z-0 inline focus-within:z-40 hover:z-40"
+      ><a
+        node="[object Object]"
+        id="cite-suzuki2026proprioceptionenhancesvisionlanguage-1"
+        href="#ref-suzuki2026proprioceptionenhancesvisionlanguage"
+        class="text-marketing-accent hover:text-marketing-accent/80 underline decoration-dotted decoration-2 underline-offset-[3px]"
+        >Suzuki et al., 2026</a
+      ></span
+    >⁠). We ask a VLM (Gemini 3.5 Flash) to caption frames from the video, embed
+    those captions, then split segments when the cosine similarity between
+    neighboring caption embeddings drops far enough. Unfortunately, the
+    threshold suggested in the paper heavily over-segments, and even after
+    sweeping many similarity thresholds this method only barely beats the
+    fixed-length baseline, reaching
+    <code
+      class="bg-marketing-artifact-surface text-foreground border-marketing-rule rounded-none border px-1.5 py-0.5 font-mono text-[0.9em]"
+      >0.081</code
+    >
+    F1.
+  </p>
+</main>

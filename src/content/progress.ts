@@ -7,6 +7,8 @@ export class PageProgress {
   private toggle = document.createElement("button");
   private hidden = false;
   private compact = false;
+  private cacheHits = new Set<HTMLElement>();
+  private lookingUp = false;
   private states = new Map<HTMLElement, ParagraphState>();
   constructor(root: ShadowRoot) {
     const style = document.createElement("style");
@@ -42,18 +44,32 @@ export class PageProgress {
   }
   start(elements: HTMLElement[]) {
     this.states = new Map(elements.map((el) => [el, "pending"]));
+    this.cacheHits.clear();
+    this.lookingUp = false;
     this.hidden = false;
     this.compact = false;
     this.render();
   }
-  include(elements:HTMLElement[]){for(const el of elements)if(!this.states.has(el))this.states.set(el,'pending');this.render();}
-  set(el: HTMLElement, state: ParagraphState) {
+  include(elements: HTMLElement[]) {
+    for (const el of elements)
+      if (!this.states.has(el)) this.states.set(el, "pending");
+    this.render();
+  }
+  lookup(active: boolean) {
+    this.lookingUp = active;
+    this.render();
+  }
+  set(el: HTMLElement, state: ParagraphState, cacheHit = false) {
     if (!this.states.has(el)) return;
     this.states.set(el, state);
+    if (cacheHit) this.cacheHits.add(el);
+    else this.cacheHits.delete(el);
     this.render();
   }
   clear() {
     this.states.clear();
+    this.cacheHits.clear();
+    this.lookingUp = false;
     this.hidden = true;
     this.panel.hidden = true;
   }
@@ -75,14 +91,16 @@ export class PageProgress {
       active = running + pending > 0;
     const label = !total
       ? "未找到可翻译正文"
-      : active
-        ? "翻译中"
-        : failed
-          ? "翻译结束"
-          : "翻译完成";
+      : this.lookingUp
+        ? "读取缓存"
+        : active
+          ? "翻译中"
+          : failed
+            ? "翻译结束"
+            : "翻译完成";
     this.text.textContent = this.compact
       ? `${label} ${done}/${total}`
-      : `${label} ${done}/${total} 段${failed ? ` · 失败 ${failed}` : ""}${skipped ? ` · 跳过 ${skipped}` : ""}`;
+      : `${label} ${done}/${total} 段${failed ? ` · 失败 ${failed}` : ""}${skipped ? ` · 跳过 ${skipped}` : ""} · 缓存 ${this.cacheHits.size}`;
     this.meter.max = Math.max(total, 1);
     this.meter.value = done;
     this.meter.hidden = this.compact || !total;

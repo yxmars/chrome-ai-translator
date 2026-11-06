@@ -9,6 +9,27 @@ import {
   UsageStore,
   pricingKey,
 } from "../../src/translation/usage";
+async function finish<T>(task: Promise<T>): Promise<T> {
+  let done = false,
+    value: T,
+    error: unknown;
+  task.then(
+    (v) => {
+      value = v;
+      done = true;
+    },
+    (e) => {
+      error = e;
+      done = true;
+    },
+  );
+  await vi.waitFor(() => expect(done).toBe(true), {
+    timeout: 4000,
+    interval: 25,
+  });
+  if (error) throw error;
+  return value!;
+}
 let store: Record<string, any>;
 beforeEach(() => {
   store = { settings: { ...defaults, mode: "direct", apiKey: "fake" } };
@@ -116,8 +137,8 @@ it("retries transient HTTP errors, records attempts, and excludes local cache hi
   );
   const service = new TranslationService();
   const task = service.translate("hello");
-  await vi.runAllTimersAsync();
-  expect((await task).text).toBe("你好");
+  expect((await finish(task)).text).toBe("你好");
+  vi.useRealTimers();
   await service.translate("hello");
   expect(fetch).toHaveBeenCalledTimes(2);
   const rows = (await service.state()).usage;
@@ -150,8 +171,7 @@ it("stops at configured retry limit", async () => {
   const result = expect(
     new TranslationService().translate("hello"),
   ).rejects.toThrow("503");
-  await vi.runAllTimersAsync();
-  await result;
+  await finish(result);
   expect(fetch).toHaveBeenCalledTimes(3);
 });
 it("accounts for malformed billable model responses before retry", async () => {
@@ -172,8 +192,8 @@ it("accounts for malformed billable model responses before retry", async () => {
   );
   const service = new TranslationService();
   const task = service.translate("hello");
-  await vi.runAllTimersAsync();
-  await task;
+  await finish(task);
+  vi.useRealTimers();
   const [row] = (await service.state()).usage;
   expect(row.input).toBe(150);
   expect(row.output).toBe(25);

@@ -60,7 +60,7 @@ test("page status shows progress, collapses without blocking reading, and clears
       page.getByRole("progressbar", { name: "网页翻译进度" }),
     ).toHaveAttribute("max", "2");
     await expect(status).toHaveCSS("pointer-events", "none");
-    await page.screenshot({path:"test-results/page-translation-status.png"});
+    await page.screenshot({ path: "test-results/page-translation-status.png" });
     await page.getByRole("button", { name: "收起翻译状态" }).click();
     await expect(page.getByRole("progressbar")).toBeHidden();
     await page.locator("#read").click();

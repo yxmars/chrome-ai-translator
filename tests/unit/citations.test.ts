@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { it, expect, vi, beforeEach } from "vitest";
 import { paragraphs } from "../../src/content/dom";
 import {
@@ -74,4 +75,31 @@ it("rejects missing or duplicate placeholders so provider retries can preserve c
   expect(
     parseResult(JSON.stringify({ text, detectedLanguage: "en" }), text).text,
   ).toBe(text);
+});
+
+it("includes the reported RoboAtom paragraph and safely preserves inline MathML", () => {
+  document.body.innerHTML = readFileSync("tests/fixtures/roboatom-paragraph.html", "utf8");
+  const el = document.querySelector("p")!;
+  const original = el.innerHTML;
+  expect(paragraphs()).toEqual([el]);
+  const prepared = protectCitations(el);
+  expect(prepared.text).not.toContain("\\pi");
+  expect(prepared.citations.size).toBe(10);
+  const target = document.createElement("div");
+  renderTranslation(target, prepared.text, prepared);
+  expect(target.querySelector("math msub mi")?.textContent).toBe("π");
+  expect(target.querySelector("math msub mn")?.textContent).toBe("0.5");
+  expect(target.querySelector("annotation")).toBeNull();
+  expect(target.querySelector("math")?.id).toBe("");
+  expect(el.innerHTML).toBe(original);
+});
+it("skips math-only paragraphs and never copies active MathML content", () => {
+  document.body.innerHTML = '<p><math><mi>longFormulaVariableName</mi></math></p><p id="prose">This paragraph has inline math <math onclick="alert(1)"><mi href="javascript:alert(1)">x</mi><annotation-xml><script>alert(1)</script></annotation-xml></math> and ordinary prose.</p>';
+  expect(paragraphs().map(el => el.id)).toEqual([]); // script-containing paragraphs remain excluded
+  const el = document.querySelector<HTMLElement>("#prose")!;
+  const prepared = protectCitations(el);
+  const target = document.createElement("div");
+  renderTranslation(target, prepared.text, prepared);
+  expect(target.querySelector("script,annotation-xml,[onclick],[href]")).toBeNull();
+  expect(target.querySelector("math mi")?.textContent).toBe("x");
 });

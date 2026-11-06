@@ -1,6 +1,6 @@
 import { normalizeText } from "../shared/text";
 const citationSelector =
-  'code,kbd,samp,cite,q,[role="doc-biblioref"],.ltx_cite,.citation,[data-citation],a[href*="#bib"],a[href*="#ref"]';
+  'math,code,kbd,samp,cite,q,[role="doc-biblioref"],.ltx_cite,.citation,[data-citation],a[href*="#bib"],a[href*="#ref"]';
 export interface ProtectedText {
   text: string;
   citations: Map<string, Node>;
@@ -31,7 +31,19 @@ export function protectCitations(el: HTMLElement): ProtectedText {
   }
   return { text: walk(el), citations };
 }
+const mathTags = new Set("math semantics mrow mi mn mo mtext mspace msub msup msubsup mfrac msqrt mroot mover munder munderover mmultiscripts mprescripts none mtable mtr mtd menclose mpadded mphantom mstyle".split(" "));
+function safeMath(node: Element): Element {
+  const copy = document.createElementNS("http://www.w3.org/1998/Math/MathML", node.localName);
+  for (const attr of ["display", "mathvariant", "mathsize", "stretchy", "fence", "separator", "accent", "accentunder", "columnalign", "rowalign", "columnspacing", "rowspacing", "linethickness", "notation"])
+    if (node.hasAttribute(attr)) copy.setAttribute(attr, node.getAttribute(attr)!);
+  for (const child of node.childNodes) {
+    if (child.nodeType === Node.TEXT_NODE) copy.append(document.createTextNode(child.textContent || ""));
+    else if (child instanceof Element && mathTags.has(child.localName)) copy.append(safeMath(child));
+  }
+  return copy;
+}
 function safeCitation(node: Node): Node {
+  if (node instanceof Element && node.localName === "math") return safeMath(node);
   if (node.nodeType === Node.TEXT_NODE)
     return document.createTextNode(node.textContent || "");
   if (node instanceof HTMLAnchorElement) {
